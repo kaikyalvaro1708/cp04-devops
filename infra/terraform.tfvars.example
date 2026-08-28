@@ -1,0 +1,9 @@
+aws_region    = "us-east-1"
+aws_profile   = "fiap"
+projeto       = "cp04-devops"
+turma         = "4ESPW"
+instance_type = "t3.micro"
+github_repo   = "SEU_USUARIO/cp04-devops"
+
+# Deixe comentado para o Terraform detectar seu IP publico sozinho.
+# ssh_cidr = "203.0.113.10/32"

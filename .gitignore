@@ -1,0 +1,12 @@
+# Chave SSH gerada pelo Terraform - nunca commitar
+*.pem
+
+# Estado e cache do Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+crash.log
+
+# Variaveis locais podem conter dados da conta
+*.tfvars
+!*.tfvars.example

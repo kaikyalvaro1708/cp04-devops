@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Portal Arcanjo SA - CP04</title>
+    <style>
+      :root {
+        --fundo: #0b0b0f;
+        --superficie: #14141c;
+        --borda: #2a2a3a;
+        --texto: #e8e8f0;
+        --suave: #a0a0b8;
+        --destaque: #ed145b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--fundo);
+        color: var(--texto);
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        line-height: 1.65;
+      }
+      .container { max-width: 880px; margin: 0 auto; padding: 48px 24px 64px; }
+      header { border-bottom: 2px solid var(--destaque); padding-bottom: 28px; margin-bottom: 40px; }
+      .tag {
+        display: inline-block; background: var(--destaque); color: #fff;
+        font-size: 12px; font-weight: 700; letter-spacing: 2px;
+        padding: 4px 12px; border-radius: 4px; margin-bottom: 16px;
+      }
+      h1 { font-size: 2.2rem; margin: 0 0 8px; line-height: 1.2; }
+      h2 { font-size: 1.35rem; margin: 40px 0 12px; color: var(--destaque); }
+      h3 { font-size: 1.05rem; margin: 0 0 8px; }
+      .identificacao { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+      .campo {
+        background: var(--superficie); border: 1px solid var(--borda);
+        border-radius: 8px; padding: 10px 16px;
+      }
+      .campo span { display: block; font-size: 12px; letter-spacing: 0.3px; color: var(--suave); margin-bottom: 2px; }
+      .campo strong { font-size: 1.05rem; font-family: Consolas, monospace; }
+      .campo-turma { border-color: var(--destaque); }
+      .campo-turma span { text-transform: uppercase; letter-spacing: 1.5px; font-size: 11px; }
+      .cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 20px; }
+      .cartao { background: var(--superficie); border: 1px solid var(--borda); border-left: 3px solid var(--destaque); border-radius: 8px; padding: 20px; }
+      .cartao p { margin: 0; color: var(--suave); font-size: 0.94rem; }
+      table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.94rem; }
+      th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--borda); vertical-align: top; }
+      th { color: var(--destaque); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+      td:first-child { white-space: nowrap; font-family: Consolas, monospace; }
+      td:last-child { color: var(--suave); }
+      .analogia { background: var(--superficie); border: 1px solid var(--borda); border-radius: 8px; padding: 20px 24px; margin-top: 20px; }
+      .analogia strong { color: var(--destaque); }
+      code { background: #1e1e2a; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+      footer { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--borda); color: var(--suave); font-size: 0.87rem; }
+      p { margin: 0 0 14px; }
+      @media (max-width: 600px) {
+        h1 { font-size: 1.7rem; }
+        .container { padding: 32px 16px 48px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <div class="tag">CHECKPOINT 04 &middot; DEVOPS TOOLS &amp; CLOUD COMPUTING</div>
+        <h1>Portal Arcanjo SA</h1>
+        <p style="color: var(--suave); margin: 0">
+          Piloto de containerização: uma imagem só, o mesmo comportamento em qualquer lugar.
+        </p>
+        <div class="identificacao">
+          <div class="campo"><span>Kaiky Alvaro de Miranda</span><strong>RM 98118</strong></div>
+          <div class="campo"><span>Juan Pinheiro de França</span><strong>RM 552202</strong></div>
+          <div class="campo"><span>Matheus Gusmão Aragão</span><strong>RM 550826</strong></div>
+          <div class="campo"><span>Júlia Marques Mendes das Neves</span><strong>RM 98680</strong></div>
+          <div class="campo campo-turma"><span>Turma</span><strong>4ESPW</strong></div>
+        </div>
+      </header>
+
+      <h2>Por que container?</h2>
+      <p>
+        Antes, cada desenvolvedor subia a aplicação do seu jeito e o deploy dependia de
+        como a máquina de destino estava configurada. Empacotando a aplicação em uma
+        imagem, o código e tudo de que ele precisa viajam juntos: o mesmo artefato que
+        roda no notebook roda na EC2, sem ajuste manual.
+      </p>
+      <p>
+        A dúvida natural do Conselho é: se o container não é uma máquina virtual, o que
+        garante que uma aplicação não atrapalhe a outra? A resposta são dois recursos do
+        próprio kernel do Linux, usados em conjunto: <strong>namespaces</strong> e
+        <strong>cgroups</strong>.
+      </p>
+
+      <div class="cartoes">
+        <div class="cartao">
+          <h3>Namespaces: o que o processo enxerga</h3>
+          <p>
+            Definem o campo de visão. Cada container recebe sua própria lista de
+            processos, sua rede e seu sistema de arquivos. Ele não vê os vizinhos, então
+            não consegue interferir neles.
+          </p>
+        </div>
+        <div class="cartao">
+          <h3>Cgroups: o quanto ele pode consumir</h3>
+          <p>
+            Definem a cota de recursos. O kernel limita e contabiliza CPU, memória, disco
+            e rede por grupo de processos. Um container com defeito consome até o teto e
+            para ali, sem derrubar o servidor inteiro.
+          </p>
+        </div>
+      </div>
+
+      <div class="analogia">
+        <strong>Em uma frase para o Conselho:</strong> namespaces são as paredes do
+        escritório, que impedem cada equipe de ver e mexer na mesa da outra; cgroups são
+        o orçamento mensal, que impede uma equipe de gastar o dinheiro de todas. São
+        controles complementares: isolamento sem limite de consumo não evita que um
+        vizinho barulhento derrube a máquina, e limite sem isolamento não protege os
+        dados.
+      </div>
+
+      <h2>Os principais namespaces</h2>
+      <table>
+        <thead>
+          <tr><th>Namespace</th><th>O que isola na prática</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>PID</td><td>A árvore de processos. Dentro do container a aplicação é o processo 1 e não enxerga nada do host.</td></tr>
+          <tr><td>NET</td><td>Interfaces de rede, IPs, rotas e portas. Por isso dois containers podem escutar a porta 80 sem conflito.</td></tr>
+          <tr><td>MNT</td><td>Os pontos de montagem, ou seja, o sistema de arquivos que o container enxerga como se fosse a raiz.</td></tr>
+          <tr><td>UTS</td><td>O hostname e o domínio, o que dá a cada container a identidade de uma máquina própria.</td></tr>
+          <tr><td>IPC</td><td>A comunicação entre processos, como memória compartilhada e filas de mensagens.</td></tr>
+          <tr><td>USER</td><td>O mapeamento de usuários. Permite ser root dentro do container sendo um usuário comum no host.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>O que os cgroups controlam</h2>
+      <table>
+        <thead>
+          <tr><th>Recurso</th><th>Efeito do limite</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>CPU</td><td>Define a fatia de processamento. O container é desacelerado ao atingir a cota, em vez de monopolizar os núcleos.</td></tr>
+          <tr><td>Memória</td><td>Estabelece um teto de RAM. Ao ultrapassar, só aquele container é encerrado, preservando os demais.</td></tr>
+          <tr><td>Disco (I/O)</td><td>Limita a taxa de leitura e escrita, evitando que um processo pesado trave o disco para todos.</td></tr>
+          <tr><td>Contabilização</td><td>Mede o consumo por grupo, o que permite cobrar, dimensionar e justificar o custo de cada aplicação.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Como este portal foi entregue</h2>
+      <p>
+        A página que você está lendo está dentro de uma imagem <code>nginx:alpine</code>,
+        publicada com a tag <code>cp04</code> e executada em um container na AWS. A
+        infraestrutura (VPC, sub-rede, internet gateway, tabela de rotas, security group e
+        a instância EC2) foi criada com Terraform, e o build, a publicação e o deploy
+        rodam em um pipeline de CI/CD, sem nenhuma etapa manual.
+      </p>
+
+      <footer>
+        FIAP &middot; Checkpoint 04 &middot; DevOps Tools &amp; Cloud Computing<br />
+        Professor Gabriel Henrique Boyczuk Arcanjo &middot; Turma 4ESPW
+      </footer>
+    </div>
+  </body>
+</html>

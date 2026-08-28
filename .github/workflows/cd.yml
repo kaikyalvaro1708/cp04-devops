@@ -1,0 +1,106 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/cd.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: cd-portal
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  DOCKERHUB_REPOSITORY: ${{ secrets.DOCKERHUB_USERNAME }}/cp04-devops
+  IMAGE_TAG: cp04
+
+jobs:
+  publicar-e-implantar:
+    name: Publica nos registries e implanta na EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configura credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login no Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Login no Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup do Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Um unico build gera as tags do ECR (consumido pela EC2)
+      # e do Docker Hub (entregavel obrigatorio do CP04).
+      - name: Build e push nos dois registries
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.IMAGE_TAG }}
+            ${{ env.DOCKERHUB_REPOSITORY }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy na EC2 via SSM
+        id: deploy
+        run: |
+          command_id=$(aws ssm send-command \
+            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --document-name AWS-RunShellScript \
+            --comment "Deploy ${{ github.sha }}" \
+            --parameters commands='/usr/local/bin/deploy.sh' \
+            --query 'Command.CommandId' --output text)
+          echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
+
+          aws ssm wait command-executed \
+            --command-id "$command_id" \
+            --instance-id "${{ vars.EC2_INSTANCE_ID }}" || true
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "${{ vars.EC2_INSTANCE_ID }}" \
+            --query '{Status:Status,Saida:StandardOutputContent,Erro:StandardErrorContent}' \
+            --output json
+
+          status=$(aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "${{ vars.EC2_INSTANCE_ID }}" \
+            --query 'Status' --output text)
+          [ "$status" = "Success" ] || { echo "::error::Deploy falhou com status $status"; exit 1; }
+
+      - name: Confirma o portal no ar
+        run: |
+          ip=$(aws ec2 describe-instances \
+            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+          for tentativa in $(seq 1 10); do
+            if curl -fsS "http://$ip" >/dev/null; then
+              echo "### Portal no ar: http://$ip" >> "$GITHUB_STEP_SUMMARY"
+              echo "Imagem publica: \`${{ env.DOCKERHUB_REPOSITORY }}:${{ env.IMAGE_TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::O portal nao respondeu em http://$ip"
+          exit 1
