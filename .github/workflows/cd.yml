@@ -47,8 +47,6 @@ jobs:
       - name: Setup do Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Um unico build gera as tags do ECR (consumido pela EC2)
-      # e do Docker Hub (entregavel obrigatorio do CP04).
       - name: Build e push nos dois registries
         uses: docker/build-push-action@v6
         with:

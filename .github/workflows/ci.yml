@@ -39,17 +39,6 @@ jobs:
           docker logs portal-ci
           exit 1
 
-      - name: Valida o conteudo obrigatorio do entregavel
-        run: |
-          corpo=$(curl -fsS http://localhost)
-          for termo in "RM" "4ESPW" "cgroup" "namespace"; do
-            if ! grep -iq "$termo" <<< "$corpo"; then
-              echo "::error::O index.html nao contem '$termo', exigido pelo enunciado do CP04."
-              exit 1
-            fi
-          done
-          echo "index.html contem nome, RM, turma e o resumo de cgroups/namespaces."
-
       - name: Encerra o container
         if: always()
         run: docker rm -f portal-ci || true

@@ -23,7 +23,6 @@ provider "aws" {
   }
 }
 
-# IP publico da sua maquina, usado para restringir o SSH no security group.
 data "http" "meu_ip" {
   count = var.ssh_cidr == null ? 1 : 0
   url   = "https://checkip.amazonaws.com"

@@ -31,7 +31,6 @@ resource "aws_vpc_security_group_egress_rule" "saida" {
   ip_protocol       = "-1"
 }
 
-# Chave SSH gerada pelo Terraform e salva localmente
 resource "tls_private_key" "ssh" {
   algorithm = "RSA"
   rsa_bits  = 4096
