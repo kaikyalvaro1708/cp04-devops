@@ -135,7 +135,7 @@ jobs:
             --instance-ids "$INSTANCE_ID" \
             --document-name AWS-RunShellScript \
             --comment "Deploy ${{ github.sha }}" \
-            --parameters commands='/usr/local/bin/deploy.sh' \
+            --parameters '{"commands":["cloud-init status --wait || true","/usr/local/bin/deploy.sh"]}' \
             --query 'Command.CommandId' --output text)
 
           aws ssm wait command-executed \

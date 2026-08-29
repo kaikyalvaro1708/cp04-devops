@@ -1,10 +1,6 @@
 #!/bin/bash
 set -euxo pipefail
 
-dnf install -y docker
-systemctl enable --now docker
-usermod -aG docker ec2-user
-
 cat > /usr/local/bin/deploy.sh <<'SCRIPT'
 #!/bin/bash
 set -euxo pipefail
@@ -15,6 +11,10 @@ docker run -d --name ${container} --restart always -p 80:80 ${imagem}
 docker image prune -f
 SCRIPT
 chmod +x /usr/local/bin/deploy.sh
+
+dnf install -y docker
+systemctl enable --now docker
+usermod -aG docker ec2-user
 
 for tentativa in 1 2 3 4 5 6 7 8 9 10; do
   if /usr/local/bin/deploy.sh; then

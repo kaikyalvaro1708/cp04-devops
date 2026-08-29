@@ -189,11 +189,15 @@ estar visível — sem ela, parece localhost.
 | #   | Print                                           | Como obter                    |
 | --- | ----------------------------------------------- | ----------------------------- |
 | 5.1 | VPC, sub-rede, IGW e tabela de rotas no console | —                             |
+!["vpc"](image-2.png)
 | 5.2 | Security group com a regra da porta 80          | Console AWS → Security Groups |
 | 5.3 | Workflow CI verde                               | Aba Actions                   |
-!["pipeline-ci"](,/imgs/image-8.png)
+!["pipeline-ci"](./imgs/image-8.png)
 | 5.4 | Workflow CD verde, com a URL no summary         | Aba Actions → CD → Summary    |
-| 5.5 | Repositório ECR com a imagem `cp04`             | Console AWS → ECR             |
+!["pipeline-cd-plan"](./imgs/image-9.png)
+| 5.5 | Repositório ECR com a imagem `cp04` e EC2            | Console AWS → ECR             |
+!["ecr"](image.png)
+!["ec2"](image-1.png)
 
 ## Estrutura do PDF
 
