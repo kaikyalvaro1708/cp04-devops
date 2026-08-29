@@ -3,9 +3,6 @@ name: CD
 on:
   push:
     branches: [main]
-    paths:
-      - "app/**"
-      - ".github/workflows/cd.yml"
   workflow_dispatch:
 
 concurrency:
@@ -13,14 +10,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION }}
-  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  AWS_REGION: ${{ secrets.AWS_REGION }}
   DOCKERHUB_REPOSITORY: ${{ secrets.DOCKERHUB_USERNAME }}/cp04-devops
   IMAGE_TAG: cp04
+  TF_STATE_KEY: cp04-devops/terraform.tfstate
 
 jobs:
-  publicar-e-implantar:
-    name: Publica nos registries e implanta na EC2
+  entregar:
+    name: Provisiona, publica e implanta
     runs-on: ubuntu-latest
 
     steps:
@@ -34,8 +31,60 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # O runner é descartável: o estado do Terraform precisa viver no S3,
+      # senão cada execução tentaria recriar a infraestrutura inteira.
+      # Idempotente: cria o bucket apenas na primeira vez.
+      - name: Bootstrap do backend de estado
+        run: |
+          conta=$(aws sts get-caller-identity --query Account --output text)
+          bucket="cp04-devops-tfstate-$conta"
+          echo "TF_STATE_BUCKET=$bucket" >> "$GITHUB_ENV"
+
+          if aws s3api head-bucket --bucket "$bucket" 2>/dev/null; then
+            echo "Bucket de estado já existe."
+          else
+            echo "Criando o bucket de estado."
+            aws s3api create-bucket --bucket "$bucket" --region "$AWS_REGION"
+            aws s3api put-bucket-versioning \
+              --bucket "$bucket" \
+              --versioning-configuration Status=Enabled
+            aws s3api put-public-access-block \
+              --bucket "$bucket" \
+              --public-access-block-configuration \
+              "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+            aws s3api put-bucket-encryption \
+              --bucket "$bucket" \
+              --server-side-encryption-configuration \
+              '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+          fi
+
+      - name: Setup do Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.4
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: infra
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
+            -backend-config="key=$TF_STATE_KEY" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="use_lockfile=true"
+
+      - name: Terraform apply
+        working-directory: infra
+        run: terraform apply -input=false -auto-approve
+
+      - name: Lê os outputs da infraestrutura
+        working-directory: infra
+        run: |
+          echo "INSTANCE_ID=$(terraform output -raw instance_id)" >> "$GITHUB_ENV"
+          echo "ECR_URL=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_ENV"
+          echo "IP_PUBLICO=$(terraform output -raw ip_publico)" >> "$GITHUB_ENV"
+
       - name: Login no Amazon ECR
-        id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Login no Docker Hub
@@ -53,52 +102,72 @@ jobs:
           context: ./app
           push: true
           tags: |
-            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ env.ECR_URL }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_URL }}:${{ github.sha }}
             ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.IMAGE_TAG }}
             ${{ env.DOCKERHUB_REPOSITORY }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # A instância pode ter acabado de nascer; o agente SSM leva um tempo
+      # até se registrar. Sem esta espera o send-command falha por "instância
+      # não encontrada" em provisionamentos novos.
+      - name: Aguarda o agente SSM registrar a instância
+        run: |
+          for tentativa in $(seq 1 30); do
+            estado=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+              --query 'InstanceInformationList[0].PingStatus' \
+              --output text 2>/dev/null || echo "None")
+            if [ "$estado" = "Online" ]; then
+              echo "Agente SSM online."
+              exit 0
+            fi
+            echo "Tentativa $tentativa: agente ainda não registrado."
+            sleep 10
+          done
+          echo "::error::O agente SSM não ficou online em 5 minutos."
+          exit 1
+
       - name: Deploy na EC2 via SSM
-        id: deploy
         run: |
           command_id=$(aws ssm send-command \
-            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --instance-ids "$INSTANCE_ID" \
             --document-name AWS-RunShellScript \
             --comment "Deploy ${{ github.sha }}" \
             --parameters commands='/usr/local/bin/deploy.sh' \
             --query 'Command.CommandId' --output text)
-          echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
 
           aws ssm wait command-executed \
             --command-id "$command_id" \
-            --instance-id "${{ vars.EC2_INSTANCE_ID }}" || true
+            --instance-id "$INSTANCE_ID" || true
 
           aws ssm get-command-invocation \
             --command-id "$command_id" \
-            --instance-id "${{ vars.EC2_INSTANCE_ID }}" \
+            --instance-id "$INSTANCE_ID" \
             --query '{Status:Status,Saida:StandardOutputContent,Erro:StandardErrorContent}' \
             --output json
 
           status=$(aws ssm get-command-invocation \
             --command-id "$command_id" \
-            --instance-id "${{ vars.EC2_INSTANCE_ID }}" \
+            --instance-id "$INSTANCE_ID" \
             --query 'Status' --output text)
           [ "$status" = "Success" ] || { echo "::error::Deploy falhou com status $status"; exit 1; }
 
       - name: Confirma o portal no ar
         run: |
-          ip=$(aws ec2 describe-instances \
-            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
-            --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
-          for tentativa in $(seq 1 10); do
-            if curl -fsS "http://$ip" >/dev/null; then
-              echo "### Portal no ar: http://$ip" >> "$GITHUB_STEP_SUMMARY"
-              echo "Imagem publica: \`${{ env.DOCKERHUB_REPOSITORY }}:${{ env.IMAGE_TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
+          for tentativa in $(seq 1 12); do
+            if curl -fsS "http://$IP_PUBLICO" >/dev/null; then
+              {
+                echo "### Portal no ar"
+                echo ""
+                echo "- URL: http://$IP_PUBLICO"
+                echo "- Imagem pública: \`${{ env.DOCKERHUB_REPOSITORY }}:${{ env.IMAGE_TAG }}\`"
+                echo "- Commit: \`${{ github.sha }}\`"
+              } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 5
           done
-          echo "::error::O portal nao respondeu em http://$ip"
+          echo "::error::O portal não respondeu em http://$IP_PUBLICO"
           exit 1

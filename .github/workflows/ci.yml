@@ -42,3 +42,29 @@ jobs:
       - name: Encerra o container
         if: always()
         run: docker rm -f portal-ci || true
+
+  terraform:
+    name: Validacao do Terraform
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup do Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.4
+          terraform_wrapper: false
+
+      - name: Formatacao
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      - name: Init sem backend
+        working-directory: infra
+        run: terraform init -backend=false -input=false
+
+      - name: Validate
+        working-directory: infra
+        run: terraform validate

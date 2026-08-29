@@ -1,5 +1,5 @@
 aws_region    = "us-east-1"
-aws_profile   = "fiap"
+aws_profile   = "default"
 projeto       = "cp04-devops"
 turma         = "4ESPW"
 instance_type = "t3.micro"

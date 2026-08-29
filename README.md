@@ -23,8 +23,8 @@ infra/                   Terraform: VPC, subnet, IGW, rotas, SG, ECR, IAM, EC2
 
 A VPC (`10.0.0.0/24`) tem uma sub-rede pública com IPv4 automático, internet
 gateway anexado e tabela de rotas com saída `0.0.0.0/0` associada à sub-rede. O
-security group libera a porta 80 para a internet e a 22 apenas para o IP de quem
-aplica o Terraform.
+security group libera apenas a porta 80 para a internet. Não há porta 22 aberta:
+o acesso à instância, quando necessário, é feito por SSM Session Manager.
 
 A instância é uma Amazon Linux 2023 que, no primeiro boot, instala o Docker,
 grava um script de deploy em `/usr/local/bin/deploy.sh` e o executa. Esse mesmo
@@ -56,80 +56,67 @@ providers baixam mas crasham ao carregar o schema. Use o binário 64 bits em
 O Terraform em si fala com a AWS normalmente, porque o Go usa o repositório de
 certificados do Windows, onde a raiz do Avast já está instalada.
 
-## Configurar a conta AWS
+## Provisionamento
 
-O provider aponta para um profile dedicado (`fiap`), separado de qualquer conta
-de trabalho. Um `apply` acidental falha em vez de criar recursos na conta errada.
+A infraestrutura **não é aplicada manualmente**. O `terraform apply` roda dentro
+do workflow de CD, a cada push na `main`. Isso garante que o que está na AWS é
+sempre o que está versionado, sem divergência entre a máquina de alguém e o
+ambiente real.
 
-1. No console da conta: IAM → Users → Create user → policy `AdministratorAccess`.
-2. Security credentials → Create access key → _Command Line Interface_.
-3. Registre o profile:
+O estado fica em um bucket S3 (`cp04-devops-tfstate-<conta>`), com versionamento
+e bloqueio por lockfile. O runner é descartável, então o estado precisa viver
+fora dele; o próprio workflow cria o bucket na primeira execução, de forma
+idempotente.
 
-```bash
-aws configure --profile fiap
-# região: us-east-1
-```
-
-4. Confirme a identidade antes de qualquer `apply`:
+Para validar as alterações localmente, sem tocar em nada:
 
 ```bash
-aws sts get-caller-identity --profile fiap --no-verify-ssl
-```
-
-## Provisionar
-
-```bash
-export TF_DISABLE_PLUGIN_TLS=1
 cd infra
-/c/Users/kaiki/bin/terraform.exe init
-/c/Users/kaiki/bin/terraform.exe plan
-/c/Users/kaiki/bin/terraform.exe apply
+terraform fmt -check -recursive
+terraform init -backend=false
+terraform validate
 ```
 
-Outputs relevantes:
+Outputs produzidos pelo apply e consumidos pelos passos seguintes do pipeline:
 
-| Output               | Uso                                  |
-| -------------------- | ------------------------------------ |
-| `url_do_portal`      | URL pública do portal                |
-| `ip_publico`         | IP público da instância              |
-| `instance_id`        | Variável `EC2_INSTANCE_ID` no GitHub |
-| `ecr_repository_url` | Variável `ECR_REPOSITORY` no GitHub  |
-| `comando_ssh`        | Conexão SSH com a chave gerada       |
-
-A chave SSH é gerada pelo Terraform em `infra/cp04-devops.pem`, ignorada pelo
-git. Nunca commitar.
+| Output               | Uso                                |
+|----------------------|------------------------------------|
+| `url_do_portal`      | URL pública do portal              |
+| `ip_publico`         | Alvo do smoke test final           |
+| `instance_id`        | Destino do comando de deploy       |
+| `ecr_repository_url` | Endereço das tags publicadas       |
 
 ## Configurar o pipeline
 
-**Secrets** (Settings → Secrets and variables → Actions):
+Tudo em **Secrets** (Settings → Secrets and variables → Actions). Nada é
+cadastrado como *variable*.
 
-| Secret                  | Origem                              |
+| Secret                  | Valor                               |
 | ----------------------- | ----------------------------------- |
 | `AWS_ACCESS_KEY_ID`     | access key do usuário IAM da conta  |
 | `AWS_SECRET_ACCESS_KEY` | secret dessa mesma access key       |
+| `AWS_REGION`            | `us-east-1`                         |
 | `DOCKERHUB_USERNAME`    | usuário do Docker Hub               |
 | `DOCKERHUB_TOKEN`       | Docker Hub → Personal access tokens |
 
-**Variables** (mesma tela, aba Variables):
-
-| Variable          | Valor                |
-| ----------------- | -------------------- |
-| `AWS_REGION`      | `us-east-1`          |
-| `ECR_REPOSITORY`  | `cp04-devops`        |
-| `EC2_INSTANCE_ID` | output `instance_id` |
-
-O pipeline usa a mesma access key do usuário IAM da conta, a mesma que o
-Terraform consome localmente.
+O id da instância e o endereço do ECR não são cadastrados em lugar nenhum: saem
+dos outputs do Terraform durante a própria execução do workflow.
 
 ## Fluxo de deploy
 
-1. Commit em `main` alterando `app/**` dispara o workflow **CD**.
-2. Um único `docker build` gera quatro tags: `cp04` e o SHA do commit, no ECR e
+1. Push na `main` dispara o workflow **CD**.
+2. O workflow garante o bucket de estado e roda `terraform apply`, criando ou
+   atualizando a infraestrutura. Nas execuções seguintes o plano fica vazio e o
+   passo é praticamente instantâneo.
+3. Os outputs do Terraform alimentam os passos seguintes: id da instância e
+   endereço do ECR não são cadastrados à mão em lugar nenhum.
+4. Um único `docker build` gera quatro tags: `cp04` e o SHA do commit, no ECR e
    no Docker Hub.
-3. O deploy usa **SSM Send-Command** para executar `/usr/local/bin/deploy.sh` na
-   instância, que faz login no ECR via IAM role, dá `docker pull` e recria o
-   container. Nenhuma chave SSH trafega pelo pipeline.
-4. O último passo confere via `curl` que o IP público responde, e escreve a URL
+5. O pipeline espera o agente SSM ficar online — numa instância recém-criada ele
+   leva um tempo a se registrar — e então usa **SSM Send-Command** para executar
+   `/usr/local/bin/deploy.sh`, que faz login no ECR via IAM role, dá `docker
+   pull` e recria o container. Nenhuma chave SSH trafega pelo pipeline.
+6. O último passo confere via `curl` que o IP público responde, e escreve a URL
    no summary da execução.
 
 ## Rodar localmente
@@ -143,12 +130,17 @@ docker rm -f portal-teste
 
 ## Destruir
 
+O estado vive no S3, então o `destroy` precisa apontar para o mesmo backend:
+
 ```bash
 cd infra
-TF_DISABLE_PLUGIN_TLS=1 /c/Users/kaiki/bin/terraform.exe destroy
+CONTA=$(aws sts get-caller-identity --query Account --output text)
+terraform init -input=false   -backend-config="bucket=cp04-devops-tfstate-$CONTA"   -backend-config="key=cp04-devops/terraform.tfstate"   -backend-config="region=us-east-1"   -backend-config="use_lockfile=true"
+terraform destroy
 ```
 
-A instância e o ECR geram custo enquanto existirem.
+A instância e o ECR geram custo enquanto existirem. O bucket de estado não é
+removido pelo `destroy` — apague à parte, se quiser limpar tudo.
 
 ---
 
@@ -184,10 +176,10 @@ Os RMs precisam estar legíveis no print.
 
 | #   | Print                                       | Como obter                                   |
 | --- | ------------------------------------------- | -------------------------------------------- |
-| 4.1 | `terraform apply` concluído com os outputs  | Capturar o bloco `Outputs:`                  |
+| 4.1 | Step do `terraform apply` no Actions        | Aba Actions → execução do CD                 |
 | 4.2 | Instância EC2 no console, estado running    | Console AWS → EC2                            |
 | 4.3 | Navegador com o portal aberto no IP público | `http://<ip_publico>`                        |
-| 4.4 | `docker ps` dentro da EC2                   | `ssh -i infra/cp04-devops.pem ec2-user@<ip>` |
+| 4.4 | `docker ps` dentro da EC2                   | Console AWS → EC2 → Connect → Session Manager |
 
 O print 4.3 é o que mais vale. A barra de endereço com o IP público precisa
 estar visível — sem ela, parece localhost.
@@ -197,8 +189,9 @@ estar visível — sem ela, parece localhost.
 | #   | Print                                           | Como obter                    |
 | --- | ----------------------------------------------- | ----------------------------- |
 | 5.1 | VPC, sub-rede, IGW e tabela de rotas no console | —                             |
-| 5.2 | Security group com as regras 80 e 22            | Console AWS → Security Groups |
+| 5.2 | Security group com a regra da porta 80          | Console AWS → Security Groups |
 | 5.3 | Workflow CI verde                               | Aba Actions                   |
+!["pipeline-ci"](,/imgs/image-8.png)
 | 5.4 | Workflow CD verde, com a URL no summary         | Aba Actions → CD → Summary    |
 | 5.5 | Repositório ECR com a imagem `cp04`             | Console AWS → ECR             |
 

@@ -5,9 +5,9 @@ variable "aws_region" {
 }
 
 variable "aws_profile" {
-  description = "Profile do ~/.aws/credentials usado para criar a infra. Mantenha separado da conta de trabalho."
+  description = "Profile local do AWS CLI. Nulo no pipeline, onde as credenciais vem do ambiente."
   type        = string
-  default     = "fiap"
+  default     = null
 }
 
 variable "projeto" {
@@ -52,8 +52,3 @@ variable "image_tag" {
   default     = "cp04"
 }
 
-variable "ssh_cidr" {
-  description = "CIDR liberado na porta 22. Deixe null para detectar seu IP publico automaticamente."
-  type        = string
-  default     = null
-}
