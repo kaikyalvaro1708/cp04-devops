@@ -10,7 +10,6 @@ resource "aws_ecr_repository" "app" {
   tags = { Name = "${local.nome}-ecr" }
 }
 
-# Mantem o repositorio enxuto: guarda as 10 imagens mais recentes.
 resource "aws_ecr_lifecycle_policy" "app" {
   repository = aws_ecr_repository.app.name
 

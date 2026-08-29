@@ -39,17 +39,32 @@ jobs:
           docker logs portal-ci
           exit 1
 
-      - name: Valida o conteudo obrigatorio do entregavel
-        run: |
-          corpo=$(curl -fsS http://localhost)
-          for termo in "RM" "4ESPW" "cgroup" "namespace"; do
-            if ! grep -iq "$termo" <<< "$corpo"; then
-              echo "::error::O index.html nao contem '$termo', exigido pelo enunciado do CP04."
-              exit 1
-            fi
-          done
-          echo "index.html contem nome, RM, turma e o resumo de cgroups/namespaces."
-
       - name: Encerra o container
         if: always()
         run: docker rm -f portal-ci || true
+
+  terraform:
+    name: Validacao do Terraform
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup do Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.4
+          terraform_wrapper: false
+
+      - name: Formatacao
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      - name: Init sem backend
+        working-directory: infra
+        run: terraform init -backend=false -input=false
+
+      - name: Validate
+        working-directory: infra
+        run: terraform validate

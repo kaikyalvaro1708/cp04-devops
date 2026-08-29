@@ -5,9 +5,9 @@ variable "aws_region" {
 }
 
 variable "aws_profile" {
-  description = "Profile do ~/.aws/credentials usado para criar a infra. Mantenha separado da conta de trabalho."
+  description = "Profile local do AWS CLI. Nulo no pipeline, onde as credenciais vem do ambiente."
   type        = string
-  default     = "fiap"
+  default     = null
 }
 
 variable "projeto" {
@@ -23,7 +23,7 @@ variable "turma" {
 }
 
 variable "vpc_cidr" {
-  description = "CIDR da VPC (o PDF sugere 10.0.0.0/24)."
+  description = "CIDR da VPC."
   type        = string
   default     = "10.0.0.0/24"
 }
@@ -47,19 +47,8 @@ variable "container_name" {
 }
 
 variable "image_tag" {
-  description = "Tag da imagem consumida pela EC2. O entregavel exige cp04."
+  description = "Tag da imagem consumida pela EC2."
   type        = string
   default     = "cp04"
 }
 
-variable "ssh_cidr" {
-  description = "CIDR liberado na porta 22. Deixe null para detectar seu IP publico automaticamente."
-  type        = string
-  default     = null
-}
-
-variable "github_repo" {
-  description = "Repositorio no formato owner/nome, usado no nome do usuario IAM do pipeline."
-  type        = string
-  default     = "owner/cp04-devops"
-}

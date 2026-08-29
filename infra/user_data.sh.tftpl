@@ -1,12 +1,10 @@
 #!/bin/bash
 set -euxo pipefail
 
-# Instalacao do Docker conforme o slide "AWS HELP" do enunciado
 dnf install -y docker
 systemctl enable --now docker
 usermod -aG docker ec2-user
 
-# Script de deploy reaproveitado pelo GitHub Actions via SSM Send-Command
 cat > /usr/local/bin/deploy.sh <<'SCRIPT'
 #!/bin/bash
 set -euxo pipefail
@@ -18,8 +16,6 @@ docker image prune -f
 SCRIPT
 chmod +x /usr/local/bin/deploy.sh
 
-# Na primeira subida a imagem pode ainda nao existir no ECR (o CD publica depois).
-# Tenta por alguns minutos e desiste sem quebrar o boot: o proximo deploy resolve.
 for tentativa in 1 2 3 4 5 6 7 8 9 10; do
   if /usr/local/bin/deploy.sh; then
     exit 0

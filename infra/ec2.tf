@@ -1,4 +1,3 @@
-# AMI mais recente do Amazon Linux 2023 (traz dnf, agente SSM e AWS CLI v2)
 data "aws_ssm_parameter" "al2023" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
@@ -12,7 +11,6 @@ resource "aws_instance" "portal" {
   instance_type          = var.instance_type
   subnet_id              = aws_subnet.publica.id
   vpc_security_group_ids = [aws_security_group.web.id]
-  key_name               = aws_key_pair.ssh.key_name
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
 
   user_data_replace_on_change = true
@@ -24,7 +22,7 @@ resource "aws_instance" "portal" {
   })
 
   metadata_options {
-    http_tokens   = "required" # IMDSv2 obrigatorio
+    http_tokens   = "required"
     http_endpoint = "enabled"
   }
 

@@ -2,10 +2,7 @@ terraform {
   required_version = ">= 1.5.0"
 
   required_providers {
-    aws   = { source = "hashicorp/aws", version = "~> 5.60" }
-    tls   = { source = "hashicorp/tls", version = "~> 4.0" }
-    local = { source = "hashicorp/local", version = "~> 2.5" }
-    http  = { source = "hashicorp/http", version = "~> 3.4" }
+    aws = { source = "hashicorp/aws", version = "~> 5.60" }
   }
 }
 
@@ -23,13 +20,6 @@ provider "aws" {
   }
 }
 
-# IP publico da sua maquina, usado para restringir o SSH no security group.
-data "http" "meu_ip" {
-  count = var.ssh_cidr == null ? 1 : 0
-  url   = "https://checkip.amazonaws.com"
-}
-
 locals {
-  ssh_cidr = var.ssh_cidr != null ? var.ssh_cidr : "${chomp(data.http.meu_ip[0].response_body)}/32"
-  nome     = var.projeto
+  nome = var.projeto
 }
