@@ -1,0 +1,53 @@
+name: Security Pipeline
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  gitleaks:
+    name: Gitleaks - detecção de segredos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Varredura de segredos
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  semgrep:
+    name: Semgrep - análise estática de código
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instala o Semgrep
+        run: pip install semgrep
+
+      - name: Varredura de código vulnerável
+        run: semgrep scan --config auto --error
+
+  trivy:
+    name: Trivy - CVE crítico na imagem
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build da imagem
+        run: docker build -t portal:security-scan ./app
+
+      - name: Varredura de CVEs
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: portal:security-scan
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
