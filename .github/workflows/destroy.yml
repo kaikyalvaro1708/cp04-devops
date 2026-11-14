@@ -1,0 +1,91 @@
+name: Destroy Infra
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Digite DESTROY para confirmar a exclusao de TODOS os recursos AWS deste projeto'
+        required: true
+
+concurrency:
+  group: cd-portal
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  TF_STATE_KEY: cp04-devops/terraform.tfstate
+
+jobs:
+  destruir:
+    name: Destroi toda a infraestrutura AWS do projeto
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'DESTROY'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configura credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Descobre o bucket de estado
+        run: |
+          conta=$(aws sts get-caller-identity --query Account --output text)
+          bucket="cp04-devops-tfstate-$conta"
+          echo "TF_STATE_BUCKET=$bucket" >> "$GITHUB_ENV"
+
+      - name: Setup do Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.4
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: infra
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
+            -backend-config="key=$TF_STATE_KEY" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="use_lockfile=true"
+
+      - name: Terraform destroy
+        working-directory: infra
+        run: terraform destroy -input=false -auto-approve
+
+      - name: Esvazia e remove o bucket de estado
+        run: |
+          if aws s3api head-bucket --bucket "$TF_STATE_BUCKET" 2>/dev/null; then
+            aws s3api put-bucket-versioning \
+              --bucket "$TF_STATE_BUCKET" \
+              --versioning-configuration Status=Suspended
+
+            objetos=$(aws s3api list-object-versions --bucket "$TF_STATE_BUCKET" \
+              --output json --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}')
+            if [ "$(echo "$objetos" | jq '.Objects | length')" -gt 0 ]; then
+              aws s3api delete-objects --bucket "$TF_STATE_BUCKET" --delete "$objetos"
+            fi
+
+            marcadores=$(aws s3api list-object-versions --bucket "$TF_STATE_BUCKET" \
+              --output json --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}')
+            if [ "$(echo "$marcadores" | jq '.Objects | length')" -gt 0 ]; then
+              aws s3api delete-objects --bucket "$TF_STATE_BUCKET" --delete "$marcadores"
+            fi
+
+            aws s3api delete-bucket --bucket "$TF_STATE_BUCKET"
+            echo "Bucket de estado removido: $TF_STATE_BUCKET"
+          else
+            echo "Bucket de estado ja nao existe, nada a remover."
+          fi
+
+      - name: Resumo
+        run: |
+          {
+            echo "### Infraestrutura destruida"
+            echo ""
+            echo "Todos os recursos AWS provisionados por este projeto (EC2, VPC, security group, IAM, ECR) e o bucket de estado do Terraform foram removidos."
+          } >> "$GITHUB_STEP_SUMMARY"
