@@ -1,11 +1,9 @@
 name: Destroy Infra
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      confirm:
-        description: 'Digite DESTROY para confirmar a exclusao de TODOS os recursos AWS deste projeto'
-        required: true
 
 concurrency:
   group: cd-portal
@@ -19,7 +17,6 @@ jobs:
   destruir:
     name: Destroi toda a infraestrutura AWS do projeto
     runs-on: ubuntu-latest
-    if: github.event.inputs.confirm == 'DESTROY'
 
     steps:
       - name: Checkout
